@@ -1,0 +1,29 @@
+harvest_short:
+  include: [garden, harvest, picking, vegetable, fruit]
+  exclude: [cooking, plating, talking]
+  target_duration: 45
+  max_duration: 75
+  preserve_source_order: true
+  min_keep_score: 0.45
+  min_visual_quality: 0.35
+  prompt: "Make the harvest itself the story. Prefer visible picking/cutting actions, produce closeups, and a basket/result payoff. Avoid kitchen footage."
+
+cooking_short:
+  include: [washing, prep, cutting, cooking, plating, ingredient]
+  exclude: [garden_broll, talking]
+  target_duration: 90
+  max_duration: 150
+  preserve_source_order: true
+  min_keep_score: 0.45
+  min_visual_quality: 0.35
+  prompt: "Create a clear ingredient-to-finished-dish progression. Prefer visible transformations over passive talking."
+
+garden_short:
+  include: [garden, plant, flower, vegetable, fruit, harvest]
+  exclude: [cooking, kitchen, talking]
+  target_duration: 45
+  max_duration: 75
+  preserve_source_order: true
+  min_keep_score: 0.4
+  min_visual_quality: 0.35
+  prompt: "Show the garden as a place: establish it, show plants/produce, include human interaction, and end on a satisfying harvest/result shot."

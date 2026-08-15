@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "video-matrix-cutter"
+version = "0.1.0"
+description = "Semantic rough-cut pipeline for turning one source video into topic-specific social cuts."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+  "openai>=1.60.0",
+  "pydantic>=2.9.0",
+  "PyYAML>=6.0.2",
+  "python-dotenv>=1.0.1",
+  "Pillow>=11.0.0",
+  "scenedetect[opencv]>=0.7.1",
+]
+
+[project.optional-dependencies]
+speech = ["faster-whisper>=1.1.0"]
+dev = ["pytest>=8.3.0"]
+
+[project.scripts]
+video-matrix = "video_matrix.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
