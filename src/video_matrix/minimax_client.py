@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import re
 import json
 import os
 import time
@@ -18,6 +19,24 @@ CATEGORIES = [
     "cooking", "plating", "eating", "talking", "other",
 ]
 
+
+
+
+def _parse_segment_id(raw) -> int | None:
+    """Coerce model output like 25, "25", "SEGMENT 25", "seg-25" into an int.
+    Returns None when no integer can be extracted."""
+    if raw is None:
+        return None
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        m = re.search(r"\d+", raw)
+        if m:
+            try:
+                return int(m.group(0))
+            except ValueError:
+                return None
+    return None
 
 def _data_url(path: Path) -> str:
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
@@ -69,16 +88,17 @@ description: one factual sentence describing what is visibly happening.
 visual_quality: 0..1, judging clarity/composition/usability as social footage.
 keep_score: 0..1, judging how useful/distinct the segment is for a topical rough cut.
 Do not infer events that are not visible. Use speech as supporting context, not as a substitute for the image.
+Return each row with `segment_id` as a JSON integer (no quotes, no "SEGMENT" prefix) drawn from the `id=` values above.
 """.strip()
 
         content: list[dict] = [{"type": "text", "text": instructions}]
         for seg in segments:
             content.append({
                 "type": "text",
-                "text": f"SEGMENT {seg.segment_id} | {seg.start:.3f}-{seg.end:.3f}s | speech={json.dumps(seg.speech, ensure_ascii=False)} | FRAME A follows",
+                "text": f"id={seg.segment_id} | {seg.start:.3f}-{seg.end:.3f}s | speech={json.dumps(seg.speech, ensure_ascii=False)} | FRAME A follows",
             })
             content.append({"type": "image_url", "image_url": {"url": _data_url(Path(seg.frame_paths[0])), "detail": "low"}})
-            content.append({"type": "text", "text": f"SEGMENT {seg.segment_id} | FRAME B follows"})
+            content.append({"type": "text", "text": f"id={seg.segment_id} | FRAME B follows"})
             content.append({"type": "image_url", "image_url": {"url": _data_url(Path(seg.frame_paths[1])), "detail": "low"}})
 
         raw = self._create([{"role": "user", "content": content}], max_tokens=max(2500, len(segments) * 500))
@@ -91,17 +111,29 @@ Do not infer events that are not visible. Use speech as supporting context, not 
         out: list[SceneSemantic] = []
         seen: set[int] = set()
         for row in rows:
-            sid = int(row["segment_id"])
-            if sid not in by_id or sid in seen:
+            sid = _parse_segment_id(row.get("segment_id"))
+            if sid is None or sid not in by_id or sid in seen:
                 continue
             src = by_id[sid]
-            row.update(start=src.start, end=src.end, speech=src.speech)
-            out.append(SceneSemantic.model_validate(row))
-            seen.add(sid)
+            try:
+                row = {k: v for k, v in row.items() if k in SceneSemantic.model_fields}
+                row.update(start=src.start, end=src.end, speech=src.speech)
+                out.append(SceneSemantic.model_validate(row))
+                seen.add(sid)
+            except Exception as exc:  # noqa: BLE001
+                print(f"  skip segment {sid}: {exc}")
 
         missing = [s.segment_id for s in segments if s.segment_id not in seen]
         if missing:
-            raise ValueError(f"MiniMax classification omitted segment IDs: {missing}")
+            print(f"  classified {len(seen)}/{len(segments)}; retrying {len(missing)} malformed/missing")
+            # Re-attempt: re-issue API call just for missing ids.
+            retry = [s for s in segments if s.segment_id not in seen]
+            retry_semantics = self.classify_batch(retry)
+            out.extend(retry_semantics)
+            seen.update(s.segment_id for s in retry_semantics)
+            still_missing = [s.segment_id for s in segments if s.segment_id not in seen]
+            if still_missing:
+                raise ValueError(f"MiniMax classification omitted segment IDs after retry: {still_missing}")
         return sorted(out, key=lambda x: x.segment_id)
 
     def plan(self, scenes: list[SceneSemantic], recipe_name: str, recipe: Recipe) -> list[int]:

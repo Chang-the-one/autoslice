@@ -44,6 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--planner", choices=["ai", "rules"], default="ai")
     r.add_argument("--output", type=Path)
     r.add_argument("--plan-only", action="store_true")
+    r.add_argument("--max-width", type=int, default=0, help="Cap output width in pixels (e.g. 1080). 0 = source width.")
+    r.add_argument("--encoder", default="auto", choices=["auto", "h264_videotoolbox", "hevc_videotoolbox", "libx264"])
 
     i = sub.add_parser("inspect", help="Print cached semantic scene map")
     i.add_argument("video", type=_video)
@@ -103,7 +105,7 @@ def main() -> None:
         if args.plan_only:
             return
         output = args.output or Path("output") / f"{args.video.stem}.{args.recipe}.mp4"
-        pipe.render(args.video, plan, output)
+        pipe.render(args.video, plan, output, max_width=args.max_width, encoder=args.encoder)
         print(f"rendered: {output}")
         return
 
