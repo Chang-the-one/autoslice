@@ -29,8 +29,14 @@ FFmpeg is deliberately **not** controlled with arbitrary model-generated shell c
 ```bash
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
-pip install -e .
+pip install -e ".[dev]"
 cp .env.example .env
+```
+
+If `pip install -e` does not pick up the package (some framework Python builds on macOS do not process editable `.pth` files when the project path contains spaces), install non-editable:
+
+```bash
+pip install . --force-reinstall --no-deps
 ```
 
 Put your MiniMax key in `.env`:

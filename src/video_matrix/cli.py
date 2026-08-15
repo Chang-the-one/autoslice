@@ -6,6 +6,12 @@ import shutil
 import sys
 from pathlib import Path
 
+# Ensure src/ is on sys.path when running as an installed console script
+# (some Python builds / framework Pythons do not process editable .pth files).
+_src = Path(__file__).resolve().parent.parent
+if _src.is_dir() and str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
+
 from .pipeline import Pipeline
 from .utils import format_time, require_binary
 
