@@ -116,9 +116,20 @@ def resolve_video_encoder(requested: str, *, ffmpeg_path: str | None = None) -> 
     available = _ffmpeg_encoder_names(ffmpeg_path)
 
     if requested == "auto":
+        # Prefer Apple VideoToolbox H.264 when the FFmpeg build exposes it
+        # (macOS). Otherwise fall back to software libx264. If even libx264
+        # is missing, fail loudly rather than silently passing a name that
+        # FFmpeg will reject at encode time.
         if "h264_videotoolbox" in available:
             return "h264_videotoolbox"
-        return "libx264"
+        if "libx264" in available:
+            return "libx264"
+        raise RuntimeError(
+            "No suitable H.264 encoder found in the installed FFmpeg. "
+            "Auto-resolution needs either 'h264_videotoolbox' (macOS) or "
+            "'libx264'. Available encoders matching '264': "
+            f"{[n for n in available if '264' in n]}."
+        )
 
     if requested in available:
         return requested

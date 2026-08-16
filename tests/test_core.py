@@ -201,3 +201,10 @@ def test_resolve_explicit_videotoolbox_passes_through(fake_encoders):
 def test_resolve_explicit_libx264_passes_through(fake_encoders):
     fake_encoders(["libx264"])
     assert resolve_video_encoder("libx264") == "libx264"
+
+
+def test_resolve_auto_raises_when_neither_videotoolbox_nor_libx264(fake_encoders):
+    """A minimal FFmpeg build with neither VideoToolbox nor libx264 should fail loudly under --encoder auto."""
+    fake_encoders(["libx265"])  # only HEVC, no H.264 of any kind
+    with pytest.raises(RuntimeError, match="No suitable H.264 encoder"):
+        resolve_video_encoder("auto")

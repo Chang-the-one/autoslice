@@ -48,7 +48,9 @@ If you need to point at a different endpoint today, set `MINIMAX_BASE_URL` and
   talk + B-roll, podcast with cuts).
 - You want three or four different short cuts for different accounts
   (harvest short, cooking short, garden short, …).
-- You want it offline, reproducible, and human-reviewable.
+- You want it local-first — segmentation and rendering run on your machine,
+  while semantic analysis currently calls MiniMax M3 over HTTPS.
+- The pipeline is reproducible and the final cut is human-reviewable.
 
 This is **not** a polished-final-cut editor. It produces rough cuts — segment
 selection, ordering, and duration tuning. You assemble the final piece in
@@ -137,8 +139,9 @@ autoslice render SOURCE RECIPE [--planner rules|ai] \
                                [--plan-only] [--output PATH]
 ```
 
-- **`--max-width 1080`** scales output down so 4K sources become phone-friendly
-  (vertical 1080×1920).
+- **`--max-width 1080`** caps the output width at 1080 px while preserving the
+  source aspect ratio (FFmpeg `scale=1080:-2`). It does **not** force a 1080×1920
+  vertical frame — use a separate tool if you need to re-frame to portrait.
 - **`--encoder auto`** inspects the installed FFmpeg and prefers
   `h264_videotoolbox` when available (macOS), falling back to `libx264` on
   Linux and other platforms. Explicit requests fail loudly when the encoder is
@@ -226,7 +229,7 @@ harvest_short:
 Write a new recipe by adding a key to `recipes.yaml`. Pass it as the `RECIPE`
 argument to `render`.
 
-The seven built-in `primary_category` values are: `garden`, `harvest`,
+The ten built-in `primary_category` values are: `garden`, `harvest`,
 `washing`, `prep`, `cutting`, `cooking`, `plating`, `eating`, `talking`,
 `other`. Secondary `labels` are open-ended (`tomato`, `luffa`, `basket`,
 `closeup`, …) — see `cache/<sha>/scenes.json` for what your source produces.
