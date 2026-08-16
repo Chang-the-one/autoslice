@@ -173,9 +173,15 @@ class Pipeline:
         recipe_name: str,
         recipes_path: Path,
         planner: str,
+        target_duration: float | None = None,
+        max_duration: float | None = None,
     ) -> tuple[EditPlan, Path]:
         _, analysis = self.load_analysis(video)
         recipe = self.load_recipe(recipes_path, recipe_name)
+        if target_duration is not None and target_duration > 0:
+            recipe.target_duration = target_duration
+        if max_duration is not None and max_duration > 0:
+            recipe.max_duration = max_duration
         if planner == "ai":
             ids = MiniMaxClient().plan(analysis.scenes, recipe_name, recipe)
         elif planner == "rules":

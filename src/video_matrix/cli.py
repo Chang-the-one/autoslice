@@ -46,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--plan-only", action="store_true")
     r.add_argument("--max-width", type=int, default=0, help="Cap output width in pixels (e.g. 1080). 0 = source width.")
     r.add_argument("--encoder", default="auto", choices=["auto", "h264_videotoolbox", "hevc_videotoolbox", "libx264"])
+    r.add_argument("--target-duration", type=float, default=0.0, help="Override recipe target duration (seconds). 0 = use recipe.")
+    r.add_argument("--max-duration", type=float, default=0.0, help="Override recipe max duration (seconds). 0 = use recipe.")
 
     i = sub.add_parser("inspect", help="Print cached semantic scene map")
     i.add_argument("video", type=_video)
@@ -97,7 +99,7 @@ def main() -> None:
         return
 
     if args.command == "render":
-        plan, plan_path = pipe.make_plan(args.video, args.recipe, args.recipes, args.planner)
+        plan, plan_path = pipe.make_plan(args.video, args.recipe, args.recipes, args.planner, target_duration=args.target_duration or None, max_duration=args.max_duration or None)
         print(f"edit plan: {plan_path}")
         print(f"clips: {len(plan.clips)} | duration: {plan.estimated_duration:.1f}s")
         for clip in plan.clips:
