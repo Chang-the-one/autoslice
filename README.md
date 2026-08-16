@@ -1,147 +1,250 @@
 # video-matrix-cutter
 
-Local semantic rough-cut pipeline for turning one already-edited source video into multiple topic-specific social cuts.
+> Local semantic rough-cut pipeline for turning one already-edited source video into multiple topic-specific social cuts.
 
-## Mental model
-
-```text
+```
 source.mp4
-  -> PySceneDetect (physical shot boundaries)
+  -> PySceneDetect  (physical shot boundaries)
   -> keyframes + optional Whisper transcript
-  -> MiniMax-M3 (visual -> semantic scene map)
+  -> vision LLM     (visual -> semantic scene map)
   -> scenes.json
-  -> MiniMax planner OR deterministic recipe planner
+  -> deterministic recipe planner OR LLM planner
   -> edit_plan.json
-  -> FFmpegTool (deterministic execution)
+  -> FFmpegTool    (deterministic execution, hardware-accelerated when available)
   -> output.mp4
 ```
 
-FFmpeg is deliberately **not** controlled with arbitrary model-generated shell commands. The model only chooses validated segment IDs. Python compiles those IDs into exact source time ranges, validates them, and calls FFmpeg with a fixed filter graph.
+The LLM planner never writes FFmpeg commands. It only chooses validated segment IDs. Python compiles those IDs into exact source time ranges, validates them, and calls FFmpeg with a fixed, human-reviewable filter graph.
 
-## Requirements
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![Tests](https://img.shields.io/badge/tests-9%20passed-brightgreen.svg)](#testing)
+[![Version 0.1.0](https://img.shields.io/badge/version-0.1.0-orange.svg)](CHANGELOG.md)
 
-- Python 3.11+
-- `ffmpeg` and `ffprobe` available on PATH
-- MiniMax API key
+## When to use this
+
+- You shoot one 5–15 minute raw video (Xiaohongshu cooking or garden clip, talk + B-roll, podcast with cuts)
+- You want three or four different short cuts for different accounts (harvest short, cooking short, garden short, …)
+- You want it offline, reproducible, and human-reviewable
+
+This is **not** a polished-final-cut editor. It produces rough cuts — segment selection, ordering, and duration tuning. You assemble the final piece in iMovie, CapCut, Premiere, or DaVinci Resolve from the rough-cuts output.
 
 ## Install
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
+git clone https://github.com/Chang-the-one/autoslice.git
+cd autoslice
+python3.12 -m venv .venv   # any Python 3.11+
+source .venv/bin/activate
+
 pip install -e ".[dev]"
+# optional speech transcription:
+# pip install -e ".[speech]"
+
 cp .env.example .env
+# edit .env and set MINIMAX_API_KEY
 ```
 
-If `pip install -e` does not pick up the package (some framework Python builds on macOS do not process editable `.pth` files when the project path contains spaces), install non-editable:
+If `pip install -e` fails on macOS framework Python builds (some don't process editable `.pth` files when the project path contains spaces):
 
 ```bash
 pip install . --force-reinstall --no-deps
 ```
 
-Put your MiniMax key in `.env`:
+## Requirements
 
-```env
-MINIMAX_API_KEY=...
-MINIMAX_BASE_URL=https://api.minimax.io/v1
-MINIMAX_MODEL=MiniMax-M3
-```
+- Python 3.11+
+- `ffmpeg` and `ffprobe` on `PATH` — install via Homebrew: `brew install ffmpeg`
+- A MiniMax-compatible API key (or any OpenAI-chat-compatible endpoint)
 
-Optional local speech transcription:
+`video-matrix doctor` checks the local toolchain for you.
+
+## Quick start
 
 ```bash
-pip install -e '.[speech]'
+# 1. Analyze once. Cached by SHA-256 of the video. Re-running is free.
+video-matrix analyze /path/to/source.mp4
+
+# 1b. With local speech transcription (Chinese, English, etc.):
+video-matrix analyze /path/to/source.mp4 --transcribe
+
+# 2. Inspect what the model thinks each segment is
+video-matrix inspect /path/to/source.mp4
+
+# 3. Generate a rough cut
+video-matrix render /path/to/source.mp4 cooking_short --planner rules
+video-matrix render /path/to/source.mp4 harvest_short --planner ai
 ```
 
-## Check runtime
+Outputs land in `output/<source_stem>.<recipe>.mp4`.
+
+## CLI reference
+
+### `analyze` — build semantic scene map
+
+```bash
+video-matrix analyze SOURCE [--transcribe] [--force] \
+                          [--threshold 27.0] [--batch-size 6] \
+                          [--whisper-model small] [--quiet]
+```
+
+- **`--transcribe`** enable local Whisper (`faster-whisper`) to attach speech to each segment before sending to the vision model. Cached by video hash, so re-runs are free.
+- **`--force`** re-analyze even if cached `scenes.json` exists (e.g. after changing `--threshold`).
+- **`--threshold`** PySceneDetect sensitivity (lower = more cuts). Default 27.0.
+
+### `render` — make a rough cut
+
+```bash
+video-matrix render SOURCE RECIPE [--planner rules|ai] \
+                                [--max-width 1080] \
+                                [--encoder auto|h264_videotoolbox|hevc_videotoolbox|libx264] \
+                                [--target-duration 50] [--max-duration 75] \
+                                [--plan-only] [--output PATH]
+```
+
+- **`--max-width 1080`** scales output down so 4K sources become phone-friendly (vertical 1080×1920).
+- **`--encoder auto`** prefers Apple's VideoToolbox hardware encode on macOS. Falls back to `libx264` software encode on other platforms.
+- **`--target-duration / --max-duration`** override the recipe's pacing for this one render — useful for tighter shorts without editing `recipes.yaml`.
+- **`--plan-only`** write `edit_plan.<recipe>.<planner>.json` to the cache and stop. Inspect, then run without `--plan-only` to actually render.
+
+### `inspect` — print scenes.json
+
+```bash
+video-matrix inspect SOURCE
+```
+
+### `doctor` — verify ffmpeg/ffprobe reachable
 
 ```bash
 video-matrix doctor
 ```
 
-## 1. Analyze once
+## Architecture
 
-```bash
-video-matrix analyze /path/to/source.mp4
+```
+                  source.mp4
+                       |
+                       v
+        +-------+  PySceneDetect  +-------+
+        |       +---------------->|       |
+        | cache |                 | cache |
+        |       |  extract 2 KFs  |       |
+        |       |  /segment       |       |
+        |       +---------------->|       |
+        |       |                 |       |
+        |       |  Whisper (opt)  |       |
+        |       |  attach speech  |       |
+        |       +---------------->|       |
+        |       |                 |       |
+        |       |  vision LLM     |       |
+        |       |  classify batch |       |
+        |       +---------------->|  sc   |
+        |       |                 |  ene  |
+        |       |  optional: LLM  |  s.   |
+        |       |  planner OR     |  js   |
+        |       |  rules_select   |  on   |
+        |       +---------------->|       |
+        +-------+                 +-------+
+                       |
+                       v
+                 edit_plan.json
+                       |
+                       v
+                  FFmpegTool
+              (hardware encode)
+                       |
+                       v
+                 output.mp4
 ```
 
-Optional speech layer:
+The critical safety property: the LLM only emits segment IDs. Python then (a) rejects unknown IDs, (b) drops duplicates, (c) re-applies recipe include/exclude and quality filters, (d) re-resolves timestamps from `scenes.json`, (e) hands a fixed filter graph to FFmpeg. There is no path by which the model can inject arbitrary shell.
 
-```bash
-video-matrix analyze /path/to/source.mp4 --transcribe
+## Recipes
+
+Recipes live in `recipes.yaml`:
+
+```yaml
+harvest_short:
+  include: [garden, harvest, picking, vegetable, fruit]
+  exclude: [cooking, plating, talking]
+  target_duration: 45
+  max_duration: 75
+  preserve_source_order: true
+  min_keep_score: 0.45
+  min_visual_quality: 0.35
+  prompt: "Make the harvest itself the story..."
 ```
 
-Analysis is cached by SHA-256 of the source video. Re-running without `--force` reuses `scenes.json` and does not make new vision calls.
+Write a new recipe by adding a key to `recipes.yaml`. Pass it as the `RECIPE` argument to `render`.
 
-## 2. Inspect semantic scene map
+The seven built-in `primary_category` values are: `garden`, `harvest`, `washing`, `prep`, `cutting`, `cooking`, `plating`, `eating`, `talking`, `other`. Secondary `labels` are open-ended (`tomato`, `luffa`, `basket`, `closeup`, …) — see `cache/<sha>/scenes.json` for what your source produces.
 
-```bash
-video-matrix inspect /path/to/source.mp4
-```
-
-## 3. Create a rough cut
-
-AI semantic planner:
-
-```bash
-video-matrix render /path/to/source.mp4 harvest_short
-```
-
-No-LLM deterministic planner:
-
-```bash
-video-matrix render /path/to/source.mp4 harvest_short --planner rules
-```
-
-Plan only, no render:
-
-```bash
-video-matrix render /path/to/source.mp4 harvest_short --plan-only
-```
-
-Outputs default to:
-
-```text
-output/source.harvest_short.mp4
-```
-
-## Files created in cache
+## Cache layout
 
 ```text
 cache/<video_sha256>/
-  frames/
-  segments.json
-  scenes.partial.json
-  scenes.json
-  edit_plan.harvest_short.ai.json
+  frames/                     # JPEG thumbnails (delete to free space; regenerable)
+  segments.json               # raw scene detection + speech
+  scenes.partial.json         # resumable Mid-batch state from the vision LLM
+  scenes.json                 # final semantic scene map
+  edit_plan.<recipe>.<planner>.json
+  transcript.txt              # only when --transcribe was used
+
+cache/aliases/<stem>.json     # symlink/iCloud-path to hash lookup
 ```
 
-`scenes.json` is the reusable semantic map. It contains source timestamps plus visual meaning. `edit_plan.*.json` is the bridge between semantic decisions and deterministic FFmpeg execution.
+The cache key is the SHA-256 of the video file's bytes. A symlink whose `.resolve()` filename differs from its link name is automatically resolved via `cache/aliases/` so re-running `render` against a symlinked original works after `analyze` ran on a proxy.
 
-## MVP categories
+## Performance notes
 
-- garden
-- harvest
-- washing
-- prep
-- cutting
-- cooking
-- plating
-- eating
-- talking
-- other
+- **Proxies**: For analysis of large 4K videos, build a 480p H.264 proxy first. Apple's `h264_videotoolbox` encoder does this in roughly real time:
 
-Secondary labels are open-ended, so the model can add `tomato`, `luffa`, `fig`, `closeup`, `basket`, etc.
+  ```bash
+  ffmpeg -hwaccel videotoolbox -i source.mp4 -vf "scale=480:-2" -an \
+         -c:v h264_videotoolbox -b:v 800k proxy.mp4
+  ```
 
-## Safety / determinism boundary
+  Then `analyze proxy.mp4`. The renderer can still target the original `source.mp4` because timestamps in `scenes.json` are in seconds, not frame indices.
 
-The MiniMax planner never writes or executes FFmpeg commands. It returns segment IDs only. The program then:
+- **Encoding**: Output uses `-c:v h264_videotoolbox` by default on macOS for ~real-time 4K → 1080p encode. Override with `--encoder libx264` if you need cross-platform compatibility.
 
-1. rejects unknown IDs;
-2. removes duplicates;
-3. reapplies recipe include/exclude and quality thresholds;
-4. enforces maximum duration;
-5. translates IDs to trusted timestamps from `scenes.json`;
-6. invokes `FFmpegTool.render()` with a fixed argument structure.
+- **Vision API cost**: Each scene costs roughly one image-classify call; a 5-minute video at default settings lands around 25–35 segments × 6 per request = ~5 batches. Each batch is small (≈1–2k tokens).
 
-This is the semantic-to-hardcoded bridge.
+## Testing
+
+```bash
+source .venv/bin/activate
+pip install -e ".[dev]"
+pytest -q
+```
+
+The test suite mocks the vision LLM and uses a synthetic 24-second test source. It does not require a real API key.
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `No semantic analysis found` on render after `analyze` was on a proxy | the symlink name and the proxy name differ — run `analyze` once on the original OR ensure the proxy stem starts with the original stem so the alias resolver matches |
+| `invalid literal for int() with base 10: 'SEGMENT 25'` | the vision LLM occasionally echoes the prompt's `id=` token back as a string; auto-handled now (client extracts the integer and retries) |
+| `pip install -e` silently fails | use `pip install . --force-reinstall --no-deps` (path-with-spaces fix) |
+| Slow `analyze` on a 4K video | transcode to a 480p H.264 proxy first |
+| Render takes too long on a 4K source | add `--max-width 1080` and rely on the default VideoToolbox encoder |
+| Local Whisper errors with `IndexError: tuple index out of range` | your proxy was created with `-an` (no audio); re-make the proxy with audio **or** point `analyze --transcribe` at the original |
+
+## Safety boundary
+
+The deterministic FFmpeg path is the program's trust boundary. Everything before it — segmentation, classification, planning — is treated as untrusted input. Specifically:
+
+1. The LLM planner returns only segment IDs. Never timestamps, never file paths, never commands.
+2. `compile_plan()` validates every ID against `scenes.json`, drops eligibility-violating clips, and rebuilds timestamps from the trusted cache.
+3. `FFmpegTool` constructs the filter graph from validated timestamps only. It does not interpolate any string from the model into a shell command.
+
+See `tests/test_core.py` for the AI-safety regression test.
+
+## Contributing
+
+Issues and pull requests welcome. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first. By participating you agree to the [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Please do **not** file a public issue for security problems — see [`SECURITY.md`](SECURITY.md).
+
+## License
+
+[MIT](LICENSE).

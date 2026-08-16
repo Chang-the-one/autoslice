@@ -9,6 +9,22 @@ description = "Semantic rough-cut pipeline for turning one source video into top
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
+keywords = ["video", "ffmpeg", "llm", "rough-cut", "social-media", "scenedetect", "whisper"]
+authors = [
+  {name = "video-matrix-cutter contributors"},
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS :: MacOS X",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Multimedia :: Video",
+  "Topic :: Multimedia :: Video :: Conversion",
+]
 dependencies = [
   "openai>=1.60.0",
   "pydantic>=2.9.0",
@@ -21,6 +37,11 @@ dependencies = [
 [project.optional-dependencies]
 speech = ["faster-whisper>=1.1.0"]
 dev = ["pytest>=8.3.0"]
+
+[project.urls]
+Homepage = "https://github.com/Chang-the-one/autoslice"
+Issues = "https://github.com/Chang-the-one/autoslice/issues"
+Source = "https://github.com/Chang-the-one/autoslice"
 
 [project.scripts]
 video-matrix = "video_matrix.cli:main"

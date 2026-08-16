@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: pytest (ubuntu-latest, py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install ffmpeg + ffprobe
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install package (non-editable to match README guidance)
+        run: |
+          python -m pip install --upgrade pip
+          # The dev extra is small (just pytest). Skip the speech extra —
+          # faster-whisper pulls ~1 GB and the test suite doesn't import it.
+          pip install . --force-reinstall --no-deps
+          pip install ".[dev]"
+
+      - name: Run pytest
+        run: pytest -q
