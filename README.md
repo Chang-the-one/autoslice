@@ -1,6 +1,8 @@
-# video-matrix-cutter
+# AutoSlice — video-matrix-cutter
 
-> Local semantic rough-cut pipeline for turning one already-edited source video into multiple topic-specific social cuts.
+> AutoSlice turns video into a semantic timeline, then lets an LLM plan the edit while FFmpeg executes it deterministically.
+
+Local-first CLI that turns one already-edited source video into multiple topic-specific rough cuts for social platforms.
 
 ```
 source.mp4
@@ -14,7 +16,7 @@ source.mp4
   -> output.mp4
 ```
 
-The LLM planner never writes FFmpeg commands. It only chooses validated segment IDs. Python compiles those IDs into exact source time ranges, validates them, and calls FFmpeg with a fixed, human-reviewable filter graph.
+**Three-stage split:** segmentation (PySceneDetect) builds the *timeline*, an LLM does the *planning* (segment IDs only), and FFmpeg does the *execution* (deterministic, hardware-accelerated). The LLM never writes FFmpeg commands — it only chooses validated segment IDs. Python compiles those IDs into exact source time ranges, validates them, and calls FFmpeg with a fixed, human-reviewable filter graph.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
