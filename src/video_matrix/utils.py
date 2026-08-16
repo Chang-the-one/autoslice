@@ -59,3 +59,81 @@ def format_time(seconds: float) -> str:
     minutes, sec = divmod(seconds, 60)
     hours, minutes = divmod(int(minutes), 60)
     return f"{hours:02d}:{minutes:02d}:{sec:06.3f}"
+
+
+_FFMPEG_ENCODERS_CACHE: list[str] | None = None
+
+
+def _ffmpeg_encoder_names(ffmpeg_path: str | None = None) -> list[str]:
+    """Return the encoder names reported by `ffmpeg -encoders`.
+
+    Cached per process so repeated CLI calls do not re-spawn ffmpeg.
+    Parses only the second whitespace-delimited column from each
+    ` V....D <name> <description>` line so we never depend on FFmpeg's
+    column alignment or version-specific layout.
+    """
+    global _FFMPEG_ENCODERS_CACHE
+    if _FFMPEG_ENCODERS_CACHE is not None:
+        return _FFMPEG_ENCODERS_CACHE
+    bin_path = ffmpeg_path or require_binary("ffmpeg")
+    proc = subprocess.run(
+        [bin_path, "-hide_banner", "-encoders"],
+        check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    names: list[str] = []
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line or line.startswith("Encoders:"):
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            names.append(parts[1])
+    _FFMPEG_ENCODERS_CACHE = names
+    return names
+
+
+def resolve_video_encoder(requested: str, *, ffmpeg_path: str | None = None) -> str:
+    """Resolve a user-requested video encoder to a concrete encoder name.
+
+    Rules:
+        ``auto``                 -> ``h264_videotoolbox`` if VideoToolbox H.264 is
+                                   available in the installed FFmpeg, otherwise
+                                   ``libx264``.
+        ``h264_videotoolbox``     -> use it, or raise RuntimeError listing
+                                   available H.264 encoders.
+        ``hevc_videotoolbox``     -> use it, or raise RuntimeError.
+        ``libx264``              -> use it, or raise RuntimeError.
+        anything else            -> ValueError so the caller knows it is invalid.
+
+    Never silently falls back from an explicit request.
+    """
+    if requested not in {"auto", "h264_videotoolbox", "hevc_videotoolbox", "libx264"}:
+        raise ValueError(
+            f"Unknown encoder {requested!r}. "
+            "Expected one of: auto, h264_videotoolbox, hevc_videotoolbox, libx264."
+        )
+
+    available = _ffmpeg_encoder_names(ffmpeg_path)
+
+    if requested == "auto":
+        if "h264_videotoolbox" in available:
+            return "h264_videotoolbox"
+        return "libx264"
+
+    if requested in available:
+        return requested
+
+    # explicit request that is missing from this FFmpeg build -> fail loudly
+    if requested == "libx264":
+        raise RuntimeError(
+            "Requested encoder 'libx264' is not available in the installed FFmpeg. "
+            f"Available H.264/HEVC encoders: {[n for n in available if '264' in n or '265' in n]}"
+        )
+    if requested in {"h264_videotoolbox", "hevc_videotoolbox"}:
+        raise RuntimeError(
+            f"Requested encoder '{requested}' is not available in the installed FFmpeg. "
+            "VideoToolbox encoders are only present in macOS builds of FFmpeg. "
+            f"Available H.264/HEVC encoders: {[n for n in available if '264' in n or '265' in n]}"
+        )
+    raise RuntimeError(f"Requested encoder '{requested}' is not available in the installed FFmpeg.")
+

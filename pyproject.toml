@@ -44,6 +44,11 @@ Issues = "https://github.com/Chang-the-one/autoslice/issues"
 Source = "https://github.com/Chang-the-one/autoslice"
 
 [project.scripts]
+# Primary console script.
+autoslice = "video_matrix.cli:main"
+# Backwards-compatible alias for v0.1.x; kept because the original
+# package name was video-matrix-cutter and some users already have
+# muscle memory for `video-matrix ...`.
 video-matrix = "video_matrix.cli:main"
 
 [tool.setuptools.packages.find]

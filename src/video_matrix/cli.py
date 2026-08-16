@@ -24,7 +24,7 @@ def _video(value: str) -> Path:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="video-matrix", description="Semantic video matrix rough-cutter")
+    p = argparse.ArgumentParser(prog="autoslice", description="AutoSlice — semantic video rough-cutter")
     p.add_argument("--cache", type=Path, default=Path("cache"), help="Cache root (default: ./cache)")
     sub = p.add_subparsers(dest="command", required=True)
 

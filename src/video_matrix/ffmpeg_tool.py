@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 from .models import EditPlan
-from .utils import require_binary
+from .utils import require_binary, resolve_video_encoder
 
 
 def has_audio(video: Path) -> bool:
@@ -74,13 +74,12 @@ class FFmpegTool:
         if audio:
             cmd += ["-map", "[ca]", "-ac", "2"]
 
-        if encoder == "auto":
-            encoder = "h264_videotoolbox"
-        if encoder.startswith("h264_videotoolbox"):
+        encoder = resolve_video_encoder(encoder, ffmpeg_path=ffmpeg)
+        if encoder == "h264_videotoolbox":
             cmd += ["-c:v", "h264_videotoolbox", "-b:v", "8000k", "-pix_fmt", "yuv420p"]
-        elif encoder.startswith("hevc_videotoolbox"):
+        elif encoder == "hevc_videotoolbox":
             cmd += ["-c:v", "hevc_videotoolbox", "-b:v", "6000k", "-tag:v", "hvc1", "-pix_fmt", "yuv420p"]
-        else:
+        else:  # libx264 or any other resolved encoder -> software path
             cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p"]
         if audio:
             cmd += ["-c:a", "aac", "-b:a", "192k"]

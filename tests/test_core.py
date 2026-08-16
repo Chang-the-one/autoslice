@@ -139,3 +139,65 @@ def test_ffmpeg_renders_to_valid_mp4(tmp_path):
     FFmpegTool().render(source, plan, out)
     assert out.exists()
     assert out.stat().st_size > 0
+
+
+# ---- encoder resolution ---------------------------------------------------
+
+import pytest
+from video_matrix.utils import resolve_video_encoder
+
+
+@pytest.fixture
+def fake_encoders(monkeypatch):
+    """Patch the cached encoder list returned by `ffmpeg -encoders`."""
+
+    def _set(names):
+        from video_matrix import utils
+        utils._FFMPEG_ENCODERS_CACHE = list(names)
+        return names
+
+    return _set
+
+
+def test_resolve_auto_prefers_videotoolbox(fake_encoders):
+    fake_encoders(["libx264", "h264_videotoolbox", "hevc_videotoolbox"])
+    assert resolve_video_encoder("auto") == "h264_videotoolbox"
+
+
+def test_resolve_auto_falls_back_to_libx264_on_linux(fake_encoders):
+    fake_encoders(["libx264", "libx265"])  # no VideoToolbox
+    assert resolve_video_encoder("auto") == "libx264"
+
+
+def test_resolve_explicit_videotoolbox_raises_when_missing(fake_encoders):
+    fake_encoders(["libx264"])
+    with pytest.raises(RuntimeError, match="h264_videotoolbox"):
+        resolve_video_encoder("h264_videotoolbox")
+
+
+def test_resolve_explicit_libx264_raises_when_missing(fake_encoders):
+    fake_encoders(["h264_videotoolbox"])  # bizarre FFmpeg build, but possible
+    with pytest.raises(RuntimeError, match="libx264"):
+        resolve_video_encoder("libx264")
+
+
+def test_resolve_explicit_hevc_videotoolbox_raises_when_missing(fake_encoders):
+    fake_encoders(["libx264"])
+    with pytest.raises(RuntimeError, match="hevc_videotoolbox"):
+        resolve_video_encoder("hevc_videotoolbox")
+
+
+def test_resolve_rejects_unknown_encoder(fake_encoders):
+    fake_encoders(["libx264"])
+    with pytest.raises(ValueError, match="Unknown encoder"):
+        resolve_video_encoder("h264_nvenc")
+
+
+def test_resolve_explicit_videotoolbox_passes_through(fake_encoders):
+    fake_encoders(["h264_videotoolbox"])
+    assert resolve_video_encoder("h264_videotoolbox") == "h264_videotoolbox"
+
+
+def test_resolve_explicit_libx264_passes_through(fake_encoders):
+    fake_encoders(["libx264"])
+    assert resolve_video_encoder("libx264") == "libx264"
